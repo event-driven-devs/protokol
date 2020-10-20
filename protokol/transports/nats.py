@@ -1,6 +1,6 @@
 import json
 from typing import Callable
-from nats.aio.client import Client
+from nats.aio.client import Client, ErrTimeout
 
 from protokol.transports.base import Transport
 
@@ -22,7 +22,10 @@ class NatsTransport(Transport):
         return await self._client.publish(realm, json.dumps(message).encode())
 
     async def request(self, realm, message, **kwargs):
-        result = await self._client.request(realm, json.dumps(message).encode(), **kwargs)
+        try:
+            result = await self._client.request(realm, json.dumps(message).encode(), **kwargs)
+        except ErrTimeout:
+            raise TimeoutError
         return json.loads(result.data.decode())
 
     async def monitor(self, callback: Callable, **kwargs):
