@@ -2,11 +2,17 @@ import collections
 import json
 from typing import Callable
 
+from protokol import settings
+
 from protokol.logger import get_logger
 from protokol.transports.base import Transport
 from protokol.transports.nats import NatsTransport
 
 logger = get_logger('protokol')
+
+
+class CallException(Exception):
+    pass
 
 
 class Protokol:
@@ -117,9 +123,15 @@ class Protokol:
             'invoke': function_name,
             'args': kwargs
         }
-        result = await self._transport.request(realm, call_data, timeout=5)
-        logger.debug(f'<< Got result: {result}')
-        return result
+        reply = await self._transport.request(realm, call_data, timeout=settings.CALL_TIMEOUT)
+        logger.debug(f'<< Got result: {reply}')
+        status = reply.get('status')
+        result = reply.get('result')
+        if status == 'ok':
+            return result
+        elif status == 'error':
+            raise CallException(result)
+        raise CallException('Internal error: bad reply from remote site')
 
     @classmethod
     def listener(cls, realm: str, signal_name: str):
