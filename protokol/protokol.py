@@ -25,7 +25,7 @@ class Protokol:
     async def _init(self, mq_url: str, transport: Transport):
         self._transport = transport
         await self._transport.connect(mq_url)
-        logger.info(f"Connected to {mq_url}")
+        logger.info('Connected to {}'.format(mq_url))
         await self._start_listeners()
 
     async def close(self):
@@ -50,20 +50,20 @@ class Protokol:
             try:
                 data = json.loads(msg.data.decode())
             except Exception:
-                logger.error(f'Exception in {realm}.{signal_name} in JSON deserialization', exc_info=True)
+                logger.error('Exception in {}.{} in JSON deserialization'.format(realm, signal_name), exc_info=True)
                 return
             signal = data.get('signal', '')
             if signal != signal_name:
                 return
             arguments = data.get('args', {})
-            logger.debug(f'<< Got signal: {realm}, {signal}')
-            logger.debug(f'   Args: {arguments}')
+            logger.debug('<< Got signal: {}, {}'.format(realm, signal))
+            logger.debug('   Args: {}'.format(arguments))
             try:
                 return await handler(self, **arguments) if self._is_my_method(handler) else await handler(**arguments)
             except Exception:
-                logger.error(f'Exception in {realm}.{signal} signal handler', exc_info=True)
+                logger.error('Exception in {}.{} signal handler'.format(realm, signal), exc_info=True)
 
-        logger.debug(f'Make listener: {realm} {signal_name} {handler}')
+        logger.debug('Make listener: {} {} {}'.format(realm, signal_name, handler))
         await self._transport.subscribe(realm, callback=signal_handler)
 
     async def make_callable(self, realm: str, function_name: str, func: Callable):
@@ -71,27 +71,27 @@ class Protokol:
             try:
                 data = json.loads(msg.data.decode())
             except Exception:
-                logger.error(f'Exception in {realm}.{function_name} in JSON deserialization', exc_info=True)
+                logger.error('Exception in {}.{} in JSON deserialization'.format(realm, function_name), exc_info=True)
                 return
             called = data.get('invoke', '')
             if called != function_name:
                 return
             arguments = data.get('args', {})
-            logger.debug(f'<< Got call: {realm}, {called}')
-            logger.debug(f'   Args: {arguments}')
+            logger.debug('<< Got call: {}, {}'.format(realm, called))
+            logger.debug('   Args: {}'.format(arguments))
             try:
                 result_data = await func(self, **arguments) if self._is_my_method(func) else await func(**arguments)
                 result = {'status': 'ok', 'result': result_data}
             except Exception as e:
-                logger.error(f'Exception in {realm}.{called} function handler', exc_info=True)
+                logger.error('Exception in {}.{} function handler'.format(realm, called), exc_info=True)
                 result = {'status': 'error', 'result': str(e)}
             try:
                 await self._transport.publish(msg.reply, result)
             except Exception as e:
-                logger.error(f'Exception in {realm}.{called} function handler on result send', exc_info=True)
-            logger.debug(f'>> Send result: {result}')
+                logger.error('Exception in {}.{} function handler on result send'.format(realm, called), exc_info=True)
+            logger.debug('>> Send result: {}'.format(result))
 
-        logger.debug(f'Make callable: {realm} {function_name} {func}')
+        logger.debug('Make callable: {} {} {}'.format(realm, function_name, func))
         await self._transport.subscribe(realm, callback=call_handler)
 
     async def make_monitor(self, name: str, func: Callable):
@@ -99,14 +99,14 @@ class Protokol:
             try:
                 data = json.loads(msg.data.decode())
             except Exception:
-                logger.error(f'Exception in JSON deserialization in {name} monitor', exc_info=True)
+                logger.error('Exception in JSON deserialization in {} monitor'.format(name), exc_info=True)
                 return None
             try:
                 return await func(self, msg.subject, data) if self._is_my_method(func) else await func(msg.subject, data)
             except Exception:
-                logger.error(f'Exception in {name} monitor handler', exc_info=True)
+                logger.error('Exception in {} monitor handler'.format(name), exc_info=True)
 
-        logger.debug(f'Make monitor {name}: {func}')
+        logger.debug('Make monitor {}: {}'.format(name, func))
         await self._transport.monitor(callback=monitor_handler)
 
     async def emit(self, realm: str, signal_name: str, **kwargs):
@@ -114,17 +114,17 @@ class Protokol:
             'signal': signal_name,
             'args': kwargs
         }
-        logger.debug(f'>> Send signal: {signal_name}, {kwargs}')
+        logger.debug('>> Send signal: {}, {}'.format(signal_name, kwargs))
         await self._transport.publish(realm, signal_data)
 
     async def call(self, realm: str, function_name: str, **kwargs):
-        logger.debug(f'>> Send call: {realm}, {function_name}, {kwargs}')
+        logger.debug('>> Send call: {}, {}, {}'.format(realm, function_name, kwargs))
         call_data = {
             'invoke': function_name,
             'args': kwargs
         }
         reply = await self._transport.request(realm, call_data, timeout=settings.CALL_TIMEOUT)
-        logger.debug(f'<< Got result: {reply}')
+        logger.debug('<< Got result: {}'.format(reply))
         status = reply.get('status')
         result = reply.get('result')
         if status == 'ok':
