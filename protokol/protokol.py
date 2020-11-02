@@ -53,7 +53,7 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, signal_name), exc_info=True)
                 return
             signal = data.get('signal', '')
-            if signal != signal_name:
+            if signal_name != '*' and signal != signal_name:
                 return
             arguments = data.get('args', {})
             logger.debug('<< Got signal: {}, {}'.format(realm, signal))
@@ -74,7 +74,7 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, function_name), exc_info=True)
                 return
             called = data.get('invoke', '')
-            if called != function_name:
+            if function_name != '*' and called != function_name:
                 return
             arguments = data.get('args', {})
             logger.debug('<< Got call: {}, {}'.format(realm, called))
