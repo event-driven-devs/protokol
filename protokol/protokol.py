@@ -45,7 +45,7 @@ class Protokol:
                 hasattr(function, '__call__') or isinstance(function, collections.Callable)
         )
 
-    async def make_listener(self, realm: str, signal_name: Union[str, None], handler: Callable):
+    async def make_listener(self, realm: str, signal_name: Union[str, None], handler: Callable, loopback_allowed=False):
         async def signal_handler(msg):
             try:
                 data = json.loads(msg.data.decode())
@@ -53,6 +53,8 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, signal_name), exc_info=True)
                 return
             signal = data.get('signal', '')
+            if not loopback_allowed and id(self) == data.get(id):
+                return
             if signal_name is not None and signal != signal_name:
                 return
             arguments = data.get('args', {})
@@ -68,7 +70,7 @@ class Protokol:
         logger.debug('Make listener: {} {} {}'.format(realm, signal_name, handler))
         await self._transport.subscribe(realm, callback=signal_handler)
 
-    async def make_callable(self, realm: str, function_name: Union[str, None], func: Callable):
+    async def make_callable(self, realm: str, function_name: Union[str, None], func: Callable, loopback_allowed=False):
         async def call_handler(msg):
             try:
                 data = json.loads(msg.data.decode())
@@ -76,6 +78,8 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, function_name), exc_info=True)
                 return
             called = data.get('invoke', '')
+            if not loopback_allowed and id(self) == data.get(id):
+                return
             if function_name is not None and called != function_name:
                 return
             arguments = data.get('args', {})
@@ -116,7 +120,8 @@ class Protokol:
     async def emit(self, realm: str, signal_name: str, **kwargs):
         signal_data = {
             'signal': signal_name,
-            'args': kwargs
+            'args': kwargs,
+            'id': id(self)
         }
         logger.debug('>> Send signal: {}, {}'.format(signal_name, kwargs))
         await self._transport.publish(realm, signal_data)
@@ -125,7 +130,8 @@ class Protokol:
         logger.debug('>> Send call: {}, {}, {}'.format(realm, function_name, kwargs))
         call_data = {
             'invoke': function_name,
-            'args': kwargs
+            'args': kwargs,
+            'id': id(self)
         }
         reply = await self._transport.request(realm, call_data, timeout=settings.CALL_TIMEOUT)
         logger.debug('<< Got result: {}'.format(reply))
@@ -138,22 +144,22 @@ class Protokol:
         raise CallException('Internal error: bad reply from remote site')
 
     @classmethod
-    def listener(cls, realm: str, signal_name: str = None):
+    def listener(cls, realm: str, signal_name: str = None, loopback_allowed=False):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
-                await self.make_listener(realm, signal_name, func)
+                await self.make_listener(realm, signal_name, func, loopback_allowed)
             return wrapper
         return inner_function
 
     @classmethod
-    def callable(cls, realm: str, function_name: str = None):
+    def callable(cls, realm: str, function_name: str = None, loopback_allowed=False):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
-                await self.make_callable(realm, function_name, func)
+                await self.make_callable(realm, function_name, func, loopback_allowed)
             return wrapper
         return inner_function
 
