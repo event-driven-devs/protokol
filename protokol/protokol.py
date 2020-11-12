@@ -1,6 +1,6 @@
 import collections
 import json
-from typing import Callable
+from typing import Callable, Union
 
 from protokol import settings
 
@@ -45,7 +45,7 @@ class Protokol:
                 hasattr(function, '__call__') or isinstance(function, collections.Callable)
         )
 
-    async def make_listener(self, realm: str, signal_name: str, handler: Callable):
+    async def make_listener(self, realm: str, signal_name: Union[str, None], handler: Callable):
         async def signal_handler(msg):
             try:
                 data = json.loads(msg.data.decode())
@@ -53,11 +53,13 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, signal_name), exc_info=True)
                 return
             signal = data.get('signal', '')
-            if signal_name != '*' and signal != signal_name:
+            if signal_name is not None and signal != signal_name:
                 return
             arguments = data.get('args', {})
             logger.debug('<< Got signal: {}, {}'.format(realm, signal))
             logger.debug('   Args: {}'.format(arguments))
+            if signal_name is None:
+                arguments['_signal_name'] = signal
             try:
                 return await handler(self, **arguments) if self._is_my_method(handler) else await handler(**arguments)
             except Exception:
@@ -66,7 +68,7 @@ class Protokol:
         logger.debug('Make listener: {} {} {}'.format(realm, signal_name, handler))
         await self._transport.subscribe(realm, callback=signal_handler)
 
-    async def make_callable(self, realm: str, function_name: str, func: Callable):
+    async def make_callable(self, realm: str, function_name: Union[str, None], func: Callable):
         async def call_handler(msg):
             try:
                 data = json.loads(msg.data.decode())
@@ -74,11 +76,13 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, function_name), exc_info=True)
                 return
             called = data.get('invoke', '')
-            if function_name != '*' and called != function_name:
+            if function_name is not None and called != function_name:
                 return
             arguments = data.get('args', {})
             logger.debug('<< Got call: {}, {}'.format(realm, called))
             logger.debug('   Args: {}'.format(arguments))
+            if function_name is None:
+                arguments['_function_name'] = called
             try:
                 result_data = await func(self, **arguments) if self._is_my_method(func) else await func(**arguments)
                 result = {'status': 'ok', 'result': result_data}
@@ -134,7 +138,7 @@ class Protokol:
         raise CallException('Internal error: bad reply from remote site')
 
     @classmethod
-    def listener(cls, realm: str, signal_name: str):
+    def listener(cls, realm: str, signal_name: str = None):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, **kwargs):
                 if not isinstance(self, Protokol):
@@ -144,7 +148,7 @@ class Protokol:
         return inner_function
 
     @classmethod
-    def callable(cls, realm: str, function_name: str):
+    def callable(cls, realm: str, function_name: str = None):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, **kwargs):
                 if not isinstance(self, Protokol):
