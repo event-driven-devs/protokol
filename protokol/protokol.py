@@ -53,9 +53,10 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, signal_name), exc_info=True)
                 return
             signal = data.get('signal', '')
-            if not loopback_allowed and id(self) == data.get('id'):
-                return
-            if signal_name is not None and signal != signal_name:
+            is_not_signal = 'signal' not in data
+            is_disallowed_loopback = not loopback_allowed and id(self) == data.get('id')
+            is_not_my_signal_name = signal_name is not None and signal != signal_name
+            if is_disallowed_loopback or is_not_my_signal_name or is_not_signal:
                 return
             arguments = data.get('args', {})
             logger.debug('<< Got signal: {}, {}'.format(realm, signal))
@@ -78,9 +79,10 @@ class Protokol:
                 logger.error('Exception in {}.{} in JSON deserialization'.format(realm, function_name), exc_info=True)
                 return
             called = data.get('invoke', '')
-            if not loopback_allowed and id(self) == data.get('id'):
-                return
-            if function_name is not None and called != function_name:
+            is_not_call = 'invoke' not in data
+            is_disallowed_loopback = not loopback_allowed and id(self) == data.get('id')
+            is_not_my_function_name = function_name is not None and called != function_name
+            if is_disallowed_loopback or is_not_my_function_name or is_not_call:
                 return
             arguments = data.get('args', {})
             logger.debug('<< Got call: {}, {}'.format(realm, called))
