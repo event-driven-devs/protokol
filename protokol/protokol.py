@@ -16,6 +16,10 @@ class CallException(Exception):
 
 
 class Protokol:
+
+    def __init__(self, *args, **kwargs):
+        self._transport = None
+
     @classmethod
     async def create(cls, mq_url: str, *args, transport: Transport = NatsTransport(), **kwargs):
         self = cls(*args, **kwargs)
