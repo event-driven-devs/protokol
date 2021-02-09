@@ -30,3 +30,7 @@ class NatsTransport(Transport):
 
     async def monitor(self, callback: Callable, **kwargs):
         return await self._client.subscribe('*', cb=callback, **kwargs)
+
+    @property
+    def is_connected(self) -> bool:
+        return self._client.is_connected
