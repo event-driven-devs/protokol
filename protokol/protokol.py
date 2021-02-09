@@ -58,13 +58,17 @@ class Protokol:
             is_not_my_signal_name = signal_name is not None and signal != signal_name
             if is_disallowed_loopback or is_not_my_signal_name or is_not_signal:
                 return
-            arguments = data.get('args', {})
+            args = data.get('args', [])
+            kwargs = data.get('kwargs', {})
             logger.debug('<< Got signal: {}, {}'.format(realm, signal))
-            logger.debug('   Args: {}'.format(arguments))
+            logger.debug('   args: {}'.format(args))
+            logger.debug('   kwargs: {}'.format(kwargs))
             if signal_name is None:
-                arguments['_signal_name'] = signal
+                kwargs['_signal_name'] = signal
             try:
-                return await handler(self, **arguments) if self._is_my_method(handler) else await handler(**arguments)
+                if self._is_my_method(handler):
+                    args = [self, *args]
+                return await handler(*args, **kwargs)
             except Exception:
                 logger.error('Exception in {}.{} signal handler'.format(realm, signal), exc_info=True)
 
@@ -84,13 +88,17 @@ class Protokol:
             is_not_my_function_name = function_name is not None and called != function_name
             if is_disallowed_loopback or is_not_my_function_name or is_not_call:
                 return
-            arguments = data.get('args', {})
+            args = data.get('args', [])
+            kwargs = data.get('kwargs', {})
             logger.debug('<< Got call: {}, {}'.format(realm, called))
-            logger.debug('   Args: {}'.format(arguments))
+            logger.debug('   args: {}'.format(args))
+            logger.debug('   kwargs: {}'.format(kwargs))
             if function_name is None:
-                arguments['_function_name'] = called
+                args = [called, *args]
             try:
-                result_data = await func(self, **arguments) if self._is_my_method(func) else await func(**arguments)
+                if self._is_my_method(func):
+                    args = [self, *args]
+                result_data = await func(*args, **kwargs)
                 result = {'status': 'ok', 'result': result_data}
             except Exception as e:
                 logger.error('Exception in {}.{} function handler'.format(realm, called), exc_info=True)
@@ -112,27 +120,36 @@ class Protokol:
                 logger.error('Exception in JSON deserialization in {} monitor'.format(name), exc_info=True)
                 return None
             try:
-                return await func(self, msg.subject, data) if self._is_my_method(func) else await func(msg.subject, data)
+                args = [msg.subject, data]
+                if self._is_my_method(func):
+                    args = [self, args]
+                return await func(*args)
             except Exception:
                 logger.error('Exception in {} monitor handler'.format(name), exc_info=True)
 
         logger.debug('Make monitor {}: {}'.format(name, func))
         await self._transport.monitor(callback=monitor_handler)
 
-    async def emit(self, realm: str, signal_name: str, **kwargs):
+    async def emit(self, realm: str, signal_name: str, *args, **kwargs):
         signal_data = {
             'signal': signal_name,
-            'args': kwargs,
+            'args': args,
+            'kwargs': kwargs,
             'id': id(self)
         }
-        logger.debug('>> Send signal: {}, {}'.format(signal_name, kwargs))
+        logger.debug('>> Send signal: {}, {}'.format(realm, signal_name))
+        logger.debug('   args: {}'.format(args))
+        logger.debug('   kwargs: {}'.format(kwargs))
         await self._transport.publish(realm, signal_data)
 
-    async def call(self, realm: str, function_name: str, **kwargs):
-        logger.debug('>> Send call: {}, {}, {}'.format(realm, function_name, kwargs))
+    async def call(self, realm: str, function_name: str, *args, **kwargs):
+        logger.debug('>> Send call: {}, {}'.format(realm, function_name))
+        logger.debug('   args: {}'.format(args))
+        logger.debug('   kwargs: {}'.format(kwargs))
         call_data = {
             'invoke': function_name,
-            'args': kwargs,
+            'args': args,
+            'kwargs': kwargs,
             'id': id(self)
         }
         reply = await self._transport.request(realm, call_data, timeout=settings.CALL_TIMEOUT)
@@ -148,7 +165,7 @@ class Protokol:
     @classmethod
     def listener(cls, realm: str, signal_name: str = None, loopback_allowed=False):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, **kwargs):
+            async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
                 await self.make_listener(realm, signal_name, func, loopback_allowed)
@@ -158,7 +175,7 @@ class Protokol:
     @classmethod
     def callable(cls, realm: str, function_name: str = None, loopback_allowed=False):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, **kwargs):
+            async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
                 await self.make_callable(realm, function_name, func, loopback_allowed)
@@ -168,22 +185,22 @@ class Protokol:
     @classmethod
     def signal(cls, realm: str, signal_name: str):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, **kwargs):
+            async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
-                await self.emit(realm, signal_name, **kwargs)
-                return await func(self, **kwargs)
+                await self.emit(realm, signal_name, *args, **kwargs)
+                return await func(self, *args, **kwargs)
             return wrapper
         return inner_function
 
     @classmethod
     def caller(cls, realm: str, function_name: str):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, **kwargs):
+            async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
                 await func(self, **kwargs)
-                return await self.call(realm, function_name, **kwargs)
+                return await self.call(realm, function_name, *args, **kwargs)
             return wrapper
 
         return inner_function
@@ -191,7 +208,7 @@ class Protokol:
     @classmethod
     def monitor(cls, name: str):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, **kwargs):
+            async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
                 await self.make_monitor(name, func)
