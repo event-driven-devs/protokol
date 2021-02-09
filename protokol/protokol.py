@@ -26,6 +26,10 @@ class Protokol:
         await self._init(mq_url, transport)
         return self
 
+    @property
+    def is_connected(self) -> bool:
+        return self._transport.is_connected
+
     async def _init(self, mq_url: str, transport: Transport):
         self._transport = transport
         await self._transport.connect(mq_url)
