@@ -207,7 +207,7 @@ class Protokol:
             async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
-                await func(self, **kwargs)
+                await func(self, *args, **kwargs)
                 return await self.call(realm, function_name, *args, **kwargs)
             return wrapper
 
