@@ -8,7 +8,13 @@ LOGGING_FORMAT_STR = '%(asctime)-10s [%(name)-40s] [%(levelname)-8s] %(message)s
 
 
 def get_logger(name: str) -> Logger:
-    logging.basicConfig(format=LOGGING_FORMAT_STR, level=logging.DEBUG if DEBUG else logging.INFO)
     logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
+
+    formatter = logging.Formatter(LOGGING_FORMAT_STR)
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
     logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
     return logger
