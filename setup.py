@@ -25,7 +25,7 @@ setup(
     license='MIT',
     packages=find_packages(exclude=['tests*']),
     install_requires=[
-        "asyncio-nats-client",
+        "nats-py",
     ],
     extras_require={
         "test": [

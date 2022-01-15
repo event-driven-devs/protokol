@@ -2,7 +2,7 @@ from typing import Callable
 
 
 class Transport:
-    async def connect(self, url: str, **kwargs):
+    async def connect(self, *urls: str, **kwargs):
         raise NotImplementedError
 
     async def close(self):
