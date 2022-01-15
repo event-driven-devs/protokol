@@ -1,6 +1,6 @@
 import collections
 import json
-from typing import Callable, Union
+from typing import Callable, Union, Iterable, List, Mapping
 
 from protokol import settings
 
@@ -19,11 +19,33 @@ class Protokol:
 
     def __init__(self, *args, **kwargs):
         self._transport = None
+        self._connection_args = []
+        self._connection_kwargs = {}
+
+    @property
+    def connection_args(self) -> List:
+        return self._connection_args
+
+    @connection_args.setter
+    def connection_args(self, value: Iterable):
+        self._connection_args = list(value or [])
+
+    @property
+    def connection_kwargs(self) -> dict:
+        return self._connection_kwargs
+
+    @connection_kwargs.setter
+    def connection_kwargs(self, value: Mapping):
+        self._connection_kwargs = dict(value or {})
 
     @classmethod
-    async def create(cls, mq_url: str, *args, transport: Transport = NatsTransport(), **kwargs):
+    async def create(cls, mq_url: str, *args, transport: Transport = NatsTransport(),
+                     connection_args: Iterable = None, connection_kwargs: Mapping = None, **kwargs):
         self = cls(*args, **kwargs)
-        await self._init(mq_url, transport)
+        self.connection_args = connection_args
+        self.connection_kwargs = connection_kwargs
+        await self._init(mq_url=mq_url,
+                         transport=transport)
         return self
 
     @property
@@ -32,7 +54,7 @@ class Protokol:
 
     async def _init(self, mq_url: str, transport: Transport):
         self._transport = transport
-        await self._transport.connect(mq_url)
+        await self._transport.connect(mq_url, *self.connection_args, **self.connection_kwargs)
         logger.info('Connected to {}'.format(mq_url))
         await self._start_listeners()
 
@@ -49,8 +71,13 @@ class Protokol:
                 await attr(self)
 
     def _is_my_method(self, function: Callable):
-        return hasattr(function, '__name__') and hasattr(self, function.__name__) and (
-                hasattr(function, '__call__') or isinstance(function, collections.Callable)
+        return (
+            hasattr(function, '__name__')
+            and hasattr(self, function.__name__)
+            and (
+                hasattr(function, '__call__')
+                or isinstance(function, collections.Callable)
+            )
         )
 
     async def make_listener(self, realm: str, signal_name: Union[str, None], handler: Callable, loopback_allowed=False):
@@ -113,7 +140,7 @@ class Protokol:
                 result = {'status': 'error', 'result': str(e)}
             try:
                 await self._transport.publish(msg.reply, result)
-            except Exception as e:
+            except Exception:
                 logger.error('Exception in {}.{} function handler on result send'.format(realm, called), exc_info=True)
             logger.debug('>> Send result: {}'.format(result))
 
