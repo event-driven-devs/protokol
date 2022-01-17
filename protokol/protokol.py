@@ -18,6 +18,7 @@ class CallException(Exception):
 class Protokol:
 
     def __init__(self, *args, **kwargs):
+        self._url = None
         self._transport = None
         self._connection_args = []
         self._connection_kwargs = {}
@@ -28,6 +29,11 @@ class Protokol:
 
     @connection_args.setter
     def connection_args(self, value: Iterable):
+        """
+            For new connection settings to take action, call `self.connect(force=True)`
+        :param value:
+        :return:
+        """
         self._connection_args = list(value or [])
 
     @property
@@ -36,30 +42,45 @@ class Protokol:
 
     @connection_kwargs.setter
     def connection_kwargs(self, value: Mapping):
+        """
+            For new connection settings to take action, call `self.connect(force=True)`
+        :param value:
+        :return:
+        """
         self._connection_kwargs = dict(value or {})
-
-    @classmethod
-    async def create(cls, mq_url: str, *args, transport: Transport = NatsTransport(),
-                     connection_args: Iterable = None, connection_kwargs: Mapping = None, **kwargs):
-        self = cls(*args, **kwargs)
-        self.connection_args = connection_args
-        self.connection_kwargs = connection_kwargs
-        await self._init(mq_url=mq_url,
-                         transport=transport)
-        return self
 
     @property
     def is_connected(self) -> bool:
         return self._transport.is_connected
 
-    async def _init(self, mq_url: str, transport: Transport):
-        self._transport = transport
-        await self._transport.connect(mq_url, *self.connection_args, **self.connection_kwargs)
-        logger.info('Connected to {}'.format(mq_url))
+    async def _start(self):
+        await self._transport.connect(self._url, *self.connection_args, **self.connection_kwargs)
+        logger.info('Connected to {}'.format(self._url))
         await self._start_listeners()
+        logger.info('Started listeners')
+
+    async def connect(self, force: bool = False):
+        if self.is_connected:
+            if not force:
+                logger.warning("Already connected to %s. "
+                               "Use `force` argument to reconnect anyway.", self._url)
+                return
+            await self.close()
+        return await self._start()
 
     async def close(self):
         await self._transport.close()
+
+    @classmethod
+    async def create(cls, mq_url: str, *args, transport: Transport = NatsTransport(),
+                     connection_args: Iterable = None, connection_kwargs: Mapping = None, **kwargs):
+        self = cls(*args, **kwargs)
+        self._url = mq_url
+        self._transport = transport
+        self.connection_args = connection_args
+        self.connection_kwargs = connection_kwargs
+        await self.connect()
+        return self
 
     async def _start_listeners(self):
         for attr in self.__class__.__dict__.values():
