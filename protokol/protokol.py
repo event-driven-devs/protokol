@@ -72,11 +72,11 @@ class Protokol:
         await self._transport.close()
 
     @classmethod
-    async def create(cls, mq_url: str, *args, transport: Transport = NatsTransport(),
+    async def create(cls, mq_url: str, *args, transport: Transport = None,
                      connection_args: Iterable = None, connection_kwargs: Mapping = None, **kwargs):
         self = cls(*args, **kwargs)
         self._url = mq_url
-        self._transport = transport
+        self._transport = transport or NatsTransport()
         self.connection_args = connection_args
         self.connection_kwargs = connection_kwargs
         await self.connect()
