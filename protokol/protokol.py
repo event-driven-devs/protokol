@@ -69,7 +69,8 @@ class Protokol:
         return await self._start()
 
     async def close(self):
-        await self._transport.close()
+        if not self.is_connected:
+            await self._transport.close()
 
     @classmethod
     async def create(cls, mq_url: str, *args, transport: Transport = None,
@@ -79,7 +80,7 @@ class Protokol:
         self._transport = transport or NatsTransport()
         self.connection_args = connection_args
         self.connection_kwargs = connection_kwargs
-        await self.connect()
+        await self.connect(force=True)
         return self
 
     async def _start_listeners(self):
