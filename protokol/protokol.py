@@ -69,8 +69,12 @@ class Protokol:
         return await self._start()
 
     async def close(self):
-        if not self.is_connected:
-            await self._transport.close()
+        if self.is_connected:
+            try:
+                await self._transport.close()
+            except Exception:
+                # In case library client misreports the 'connected' status
+                logger.warning("Failed to close transport", exc_info=True)
 
     @classmethod
     async def create(cls, mq_url: str, *args, transport: Transport = None,
