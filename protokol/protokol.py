@@ -226,7 +226,7 @@ class Protokol:
         raise CallException('Internal error: bad reply from remote site')
 
     @classmethod
-    def listener(cls, realm: str, signal_name: str = None, group: str = None,
+    def listener(cls, realm: str, signal_name: str = None, group: str = "",
                  loopback_allowed: bool = False):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
