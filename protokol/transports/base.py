@@ -8,7 +8,7 @@ class Transport:
     async def close(self):
         raise NotImplementedError
 
-    async def subscribe(self, realm: str, callback: Callable, group: str = None, **kwargs):
+    async def subscribe(self, realm: str, callback: Callable, **kwargs):
         raise NotImplementedError
 
     async def publish(self, realm, message, **kwargs):

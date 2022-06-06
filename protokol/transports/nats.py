@@ -15,8 +15,8 @@ class NatsTransport(Transport):
     async def close(self):
         return await self._client.close()
 
-    async def subscribe(self, realm: str, callback: Callable, group: str = "", **kwargs):
-        return await self._client.subscribe(realm, cb=callback, queue=group, **kwargs)
+    async def subscribe(self, realm: str, callback: Callable, **kwargs):
+        return await self._client.subscribe(realm, cb=callback, **kwargs)
 
     async def publish(self, realm, message, **kwargs):
         return await self._client.publish(realm, json.dumps(message).encode())
