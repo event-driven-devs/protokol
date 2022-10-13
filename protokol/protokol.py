@@ -69,7 +69,14 @@ class Protokol:
         return await self._start()
 
     async def close(self):
-        await self._transport.close()
+        if self.is_connected:
+            try:
+                await self._transport.close()
+            except Exception as e:
+                # In case library client misreports the 'connected' status
+                logger.warning(f"Failed to close transport."
+                               f"{f'Error: {e}' if not settings.DEBUG else ''}",
+                               exc_info=True)
 
     @classmethod
     async def create(cls, mq_url: str, *args, transport: Transport = None,
@@ -79,7 +86,7 @@ class Protokol:
         self._transport = transport or NatsTransport()
         self.connection_args = connection_args
         self.connection_kwargs = connection_kwargs
-        await self.connect()
+        await self.connect(force=True)
         return self
 
     async def _start_listeners(self):
@@ -129,7 +136,7 @@ class Protokol:
             except Exception:
                 logger.error('Exception in {}.{} signal handler'.format(realm, signal), exc_info=True)
 
-        logger.debug('Make listener: {} {} {}'.format(realm, signal_name, handler))
+        logger.debug('Make listener: {} {} {} {}'.format(realm, signal_name, group, handler))
         await self._transport.subscribe(realm, group=group, callback=signal_handler)
 
     async def make_callable(self, realm: str, function_name: Optional[str], handler: Callable[..., Awaitable],
@@ -221,7 +228,7 @@ class Protokol:
         raise CallException('Internal error: bad reply from remote site')
 
     @classmethod
-    def listener(cls, realm: str, signal_name: str = None, group: str = None,
+    def listener(cls, realm: str, signal_name: str = None, group: str = '',
                  loopback_allowed: bool = False):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
