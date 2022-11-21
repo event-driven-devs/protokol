@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "protokol"
-version = "1.4.1"
+version = "1.4.2"
 description = "NATS-oriented RPC and Event protocol"
 authors = ["Sergey Zhegunya <harmonicsseven@gmail.com>"]
 
