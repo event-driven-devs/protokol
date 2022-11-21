@@ -1,5 +1,6 @@
 import json
 from typing import Callable
+
 from nats.aio.client import Client
 from nats.aio.errors import ErrTimeout
 
@@ -16,7 +17,9 @@ class NatsTransport(Transport):
     async def close(self):
         return await self._client.close()
 
-    async def subscribe(self, realm: str, callback: Callable, group: str = "", **kwargs):
+    async def subscribe(
+        self, realm: str, callback: Callable, group: str = "", **kwargs
+    ):
         return await self._client.subscribe(realm, cb=callback, queue=group, **kwargs)
 
     async def publish(self, realm, message, **kwargs):
@@ -24,13 +27,15 @@ class NatsTransport(Transport):
 
     async def request(self, realm, message, **kwargs):
         try:
-            result = await self._client.request(realm, json.dumps(message).encode(), **kwargs)
+            result = await self._client.request(
+                realm, json.dumps(message).encode(), **kwargs
+            )
         except ErrTimeout:
             raise TimeoutError
         return json.loads(result.data)
 
     async def monitor(self, callback: Callable, **kwargs):
-        return await self._client.subscribe('*', cb=callback, **kwargs)
+        return await self._client.subscribe("*", cb=callback, **kwargs)
 
     @property
     def is_connected(self) -> bool:
