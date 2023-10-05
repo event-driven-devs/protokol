@@ -1,14 +1,15 @@
 import json
-from typing import Callable
+from typing import Any, Callable, Optional
 
 from nats.aio.client import Client
-from nats.aio.errors import ErrTimeout
+from tenacity import AsyncRetrying
 
 from protokol.transports.base import Transport
 
 
 class NatsTransport(Transport):
-    def __init__(self):
+    def __init__(self, default_retry_config: Optional[AsyncRetrying] = None):
+        super().__init__(default_retry_config=default_retry_config)
         self._client = Client()
 
     async def connect(self, *urls: str, **kwargs):
@@ -22,16 +23,15 @@ class NatsTransport(Transport):
     ):
         return await self._client.subscribe(realm, cb=callback, queue=group, **kwargs)
 
-    async def publish(self, realm, message, **kwargs):
-        return await self._client.publish(realm, json.dumps(message).encode())
+    async def _do_publish(self, realm: str, message: Any, **kwargs):
+        return await self._client.publish(
+            subject=realm, payload=json.dumps(message).encode()
+        )
 
-    async def request(self, realm, message, **kwargs):
-        try:
-            result = await self._client.request(
-                realm, json.dumps(message).encode(), **kwargs
-            )
-        except ErrTimeout:
-            raise TimeoutError
+    async def _do_request(self, realm: str, message: Any, **kwargs):
+        result = await self._client.request(
+            realm, json.dumps(message).encode(), **kwargs
+        )
         return json.loads(result.data)
 
     async def monitor(self, callback: Callable, **kwargs):

@@ -8,6 +8,7 @@ authors = ["Sergey Zhegunya <harmonicsseven@gmail.com>"]
 python = ">=3.7,<4.0"
 nats-py = "^2.2.0"
 loguru = "^0.6.0"
+tenacity = "^8.2.3"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = [
