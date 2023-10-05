@@ -7,9 +7,13 @@ authors = ["Sergey Zhegunya <harmonicsseven@gmail.com>"]
 [tool.poetry.dependencies]
 python = ">=3.7,<4.0"
 nats-py = "^2.2.0"
-loguru = "^0.6.0"
+tenacity = "^8.2.3"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
+pre-commit = [
+    {"version" = "^3.4.0", "python" = ">=3.8"},
+    {"version" = "<3", "python" = "<3.8"}
+]
 pytest = "^7.2.0"
 pytest-cov = "^4.0.0"
 black = "^22.10.0"
