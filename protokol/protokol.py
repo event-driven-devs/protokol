@@ -27,9 +27,9 @@ class Protokol:
 
     @connection_args.setter
     def connection_args(self, value: Iterable):
-        """
-            For new connection settings to take action, call `self.connect(force=True)`
-        :param value:
+        """For new connection settings to take action, call
+        `self.connect(force=True)` :param value:
+
         :return:
         """
         self._connection_args = list(value or [])
@@ -40,9 +40,9 @@ class Protokol:
 
     @connection_kwargs.setter
     def connection_kwargs(self, value: Mapping):
-        """
-            For new connection settings to take action, call `self.connect(force=True)`
-        :param value:
+        """For new connection settings to take action, call
+        `self.connect(force=True)` :param value:
+
         :return:
         """
         self._connection_kwargs = dict(value or {})
