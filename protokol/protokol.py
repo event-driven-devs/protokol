@@ -2,7 +2,7 @@ import collections
 import json
 from typing import AsyncIterator, Awaitable, Callable, Iterable, List, Mapping, Optional
 
-from tenacity import AsyncRetrying
+from tenacity import AsyncRetrying, AttemptManager, stop_after_attempt
 
 from protokol import settings
 from protokol.logger import get_logger
@@ -55,14 +55,26 @@ class Protokol:
 
     async def _retrying(
         self, retry_config: Optional[AsyncRetrying] = _sentinel
-    ) -> AsyncIterator[AsyncRetrying]:
+    ) -> AsyncIterator[AttemptManager]:
+        """Wrap an arbitrary code with this iterator to add retry logic to it.
+        Handling logic is dictated by the specific retry config supplied to the
+        method or the config from Protokol instance (if either exists).
+
+        :param retry_config: Custom retry config. If not supplied, the
+            instance default will be used, if present. If no configs are
+            supplied, this is just a noop
+        :return:
+        """
         if retry_config is _sentinel:
             retry_config = self._default_retry_config
 
-        if retry_config:
-            async for attempt in retry_config:
-                with attempt:
-                    yield attempt
+        if retry_config is None:
+            retry_config = AsyncRetrying(stop=stop_after_attempt(1), reraise=True)
+
+        async for attempt in retry_config:
+            # TODO: Using `with` here doesn't really work
+            #  (attemptManager catches asyncio.CancelledError instead of the one originally raised)
+            yield attempt
 
     @property
     def is_connected(self) -> bool:
@@ -196,8 +208,11 @@ class Protokol:
             "Make listener: {} {} {} {}".format(realm, signal_name, group, handler)
         )
 
-        async with self._retrying(retry_config=retry_config):
-            await self._transport.subscribe(realm, group=group, callback=signal_handler)
+        async for attempt in self._retrying(retry_config=retry_config):
+            with attempt:
+                await self._transport.subscribe(
+                    realm, group=group, callback=signal_handler
+                )
 
     async def make_callable(
         self,
@@ -256,8 +271,9 @@ class Protokol:
             logger.debug(">> Send result: {}".format(result))
 
         logger.debug("Make callable: {} {} {}".format(realm, function_name, handler))
-        async with self._retrying(retry_config=retry_config):
-            await self._transport.subscribe(realm, callback=call_handler)
+        async for attempt in self._retrying(retry_config=retry_config):
+            with attempt:
+                await self._transport.subscribe(realm, callback=call_handler)
 
     async def make_monitor(
         self,
@@ -285,15 +301,16 @@ class Protokol:
                 )
 
         logger.debug("Make monitor {}: {}".format(name, handler))
-        async with self._retrying(retry_config=retry_config):
-            await self._transport.monitor(callback=monitor_handler)
+        async for attempt in self._retrying(retry_config=retry_config):
+            with attempt:
+                await self._transport.monitor(callback=monitor_handler)
 
     async def emit(
         self,
         realm: str,
         signal_name: str,
-        retry_config: Optional[AsyncRetrying] = _sentinel,
         *args,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
         **kwargs,
     ):
         signal_data = {
@@ -305,15 +322,16 @@ class Protokol:
         logger.debug(">> Send signal: {}, {}".format(realm, signal_name))
         logger.debug("   args: {}".format(args))
         logger.debug("   kwargs: {}".format(kwargs))
-        async with self._retrying(retry_config=retry_config):
-            await self._transport.publish(realm, signal_data)
+        async for attempt in self._retrying(retry_config=retry_config):
+            with attempt:
+                await self._transport.publish(realm, signal_data)
 
     async def call(
         self,
         realm: str,
         function_name: str,
-        retry_config: Optional[AsyncRetrying] = _sentinel,
         *args,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
         **kwargs,
     ):
         logger.debug(">> Send call: {}, {}".format(realm, function_name))
@@ -326,10 +344,11 @@ class Protokol:
             "id": id(self),
         }
 
-        async with self._retrying(retry_config=retry_config):
-            reply = await self._transport.request(
-                realm, call_data, timeout=settings.CALL_TIMEOUT
-            )
+        async for attempt in self._retrying(retry_config):
+            with attempt:
+                reply = await self._transport.request(
+                    realm, call_data, timeout=settings.CALL_TIMEOUT
+                )
 
         logger.debug("<< Got result: {}".format(reply))
         status = reply.get("status")
@@ -402,8 +421,8 @@ class Protokol:
                 if not isinstance(self, Protokol):
                     raise ValueError()
                 await self.emit(
-                    realm=realm,
-                    signal_name=signal_name,
+                    realm,
+                    signal_name,
                     *args,
                     retry_config=retry_config,
                     **kwargs,
