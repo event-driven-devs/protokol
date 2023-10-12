@@ -1,6 +1,8 @@
 import collections
 import json
-from typing import Awaitable, Callable, Iterable, List, Mapping, Optional
+from typing import AsyncIterator, Awaitable, Callable, Iterable, List, Mapping, Optional
+
+from tenacity import AsyncRetrying
 
 from protokol import settings
 from protokol.logger import get_logger
@@ -8,6 +10,9 @@ from protokol.transports.base import Transport
 from protokol.transports.nats import NatsTransport
 
 logger = get_logger("protokol")
+
+
+_sentinel = object()
 
 
 class CallException(Exception):
@@ -20,6 +25,7 @@ class Protokol:
         self._transport = None
         self._connection_args = []
         self._connection_kwargs = {}
+        self._default_retry_config = None
 
     @property
     def connection_args(self) -> List:
@@ -47,11 +53,23 @@ class Protokol:
         """
         self._connection_kwargs = dict(value or {})
 
+    async def _retrying(
+        self, retry_config: Optional[AsyncRetrying] = _sentinel
+    ) -> AsyncIterator[AsyncRetrying]:
+        if retry_config is _sentinel:
+            retry_config = self._default_retry_config
+
+        if retry_config:
+            async for attempt in retry_config:
+                with attempt:
+                    yield attempt
+
     @property
     def is_connected(self) -> bool:
         return self._transport.is_connected
 
     async def _start(self):
+        # TODO: Apply retry config here as well?
         await self._transport.connect(
             self._url, *self.connection_args, **self.connection_kwargs
         )
@@ -91,6 +109,7 @@ class Protokol:
         transport: Transport = None,
         connection_args: Iterable = None,
         connection_kwargs: Mapping = None,
+        default_retry_config: Optional[AsyncRetrying] = None,
         **kwargs,
     ):
         self = cls(*args, **kwargs)
@@ -98,6 +117,7 @@ class Protokol:
         self._transport = transport or NatsTransport()
         self.connection_args = connection_args
         self.connection_kwargs = connection_kwargs
+        self._default_retry_config = default_retry_config
         await self.connect(force=True)
         return self
 
@@ -136,6 +156,7 @@ class Protokol:
         group: Optional[str],
         handler: Callable[..., Awaitable],
         loopback_allowed: bool = False,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
     ):
         async def signal_handler(msg):
             try:
@@ -174,7 +195,9 @@ class Protokol:
         logger.debug(
             "Make listener: {} {} {} {}".format(realm, signal_name, group, handler)
         )
-        await self._transport.subscribe(realm, group=group, callback=signal_handler)
+
+        async with self._retrying(retry_config=retry_config):
+            await self._transport.subscribe(realm, group=group, callback=signal_handler)
 
     async def make_callable(
         self,
@@ -182,6 +205,7 @@ class Protokol:
         function_name: Optional[str],
         handler: Callable[..., Awaitable],
         loopback_allowed: bool = False,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
     ):
         async def call_handler(msg):
             try:
@@ -232,9 +256,15 @@ class Protokol:
             logger.debug(">> Send result: {}".format(result))
 
         logger.debug("Make callable: {} {} {}".format(realm, function_name, handler))
-        await self._transport.subscribe(realm, callback=call_handler)
+        async with self._retrying(retry_config=retry_config):
+            await self._transport.subscribe(realm, callback=call_handler)
 
-    async def make_monitor(self, name: str, handler: Callable[..., Awaitable]):
+    async def make_monitor(
+        self,
+        name: str,
+        handler: Callable[..., Awaitable],
+        retry_config: Optional[AsyncRetrying] = _sentinel,
+    ):
         async def monitor_handler(msg):
             try:
                 data = json.loads(msg.data.decode())
@@ -255,9 +285,17 @@ class Protokol:
                 )
 
         logger.debug("Make monitor {}: {}".format(name, handler))
-        await self._transport.monitor(callback=monitor_handler)
+        async with self._retrying(retry_config=retry_config):
+            await self._transport.monitor(callback=monitor_handler)
 
-    async def emit(self, realm: str, signal_name: str, *args, **kwargs):
+    async def emit(
+        self,
+        realm: str,
+        signal_name: str,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
+        *args,
+        **kwargs,
+    ):
         signal_data = {
             "signal": signal_name,
             "args": args,
@@ -267,9 +305,17 @@ class Protokol:
         logger.debug(">> Send signal: {}, {}".format(realm, signal_name))
         logger.debug("   args: {}".format(args))
         logger.debug("   kwargs: {}".format(kwargs))
-        await self._transport.publish(realm, signal_data)
+        async with self._retrying(retry_config=retry_config):
+            await self._transport.publish(realm, signal_data)
 
-    async def call(self, realm: str, function_name: str, *args, **kwargs):
+    async def call(
+        self,
+        realm: str,
+        function_name: str,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
+        *args,
+        **kwargs,
+    ):
         logger.debug(">> Send call: {}, {}".format(realm, function_name))
         logger.debug("   args: {}".format(args))
         logger.debug("   kwargs: {}".format(kwargs))
@@ -279,9 +325,12 @@ class Protokol:
             "kwargs": kwargs,
             "id": id(self),
         }
-        reply = await self._transport.request(
-            realm, call_data, timeout=settings.CALL_TIMEOUT
-        )
+
+        async with self._retrying(retry_config=retry_config):
+            reply = await self._transport.request(
+                realm, call_data, timeout=settings.CALL_TIMEOUT
+            )
+
         logger.debug("<< Got result: {}".format(reply))
         status = reply.get("status")
         result = reply.get("result")
@@ -298,6 +347,7 @@ class Protokol:
         signal_name: str = None,
         group: str = "",
         loopback_allowed: bool = False,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
     ):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
@@ -309,6 +359,7 @@ class Protokol:
                     group=group,
                     handler=func,
                     loopback_allowed=loopback_allowed,
+                    retry_config=retry_config,
                 )
 
             return wrapper
@@ -316,7 +367,13 @@ class Protokol:
         return inner_function
 
     @classmethod
-    def callable(cls, realm: str, function_name: str = None, loopback_allowed=False):
+    def callable(
+        cls,
+        realm: str,
+        function_name: str = None,
+        loopback_allowed: bool = False,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
+    ):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
@@ -326,6 +383,7 @@ class Protokol:
                     function_name,
                     handler=func,
                     loopback_allowed=loopback_allowed,
+                    retry_config=retry_config,
                 )
 
             return wrapper
@@ -333,12 +391,23 @@ class Protokol:
         return inner_function
 
     @classmethod
-    def signal(cls, realm: str, signal_name: str):
+    def signal(
+        cls,
+        realm: str,
+        signal_name: str,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
+    ):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
-                await self.emit(realm, signal_name, *args, **kwargs)
+                await self.emit(
+                    realm=realm,
+                    signal_name=signal_name,
+                    *args,
+                    retry_config=retry_config,
+                    **kwargs,
+                )
                 return await func(self, *args, **kwargs)
 
             return wrapper
@@ -346,25 +415,42 @@ class Protokol:
         return inner_function
 
     @classmethod
-    def caller(cls, realm: str, function_name: str):
+    def caller(
+        cls,
+        realm: str,
+        function_name: str,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
+    ):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
                 await func(self, *args, **kwargs)
-                return await self.call(realm, function_name, *args, **kwargs)
+                return await self.call(
+                    realm=realm,
+                    function_name=function_name,
+                    *args,
+                    retry_config=retry_config,
+                    **kwargs,
+                )
 
             return wrapper
 
         return inner_function
 
     @classmethod
-    def monitor(cls, name: str):
+    def monitor(
+        cls,
+        name: str,
+        retry_config: Optional[AsyncRetrying] = _sentinel,
+    ):
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
                     raise ValueError()
-                await self.make_monitor(name, handler=func)
+                await self.make_monitor(
+                    name=name, handler=func, retry_config=retry_config
+                )
 
             return wrapper
 
