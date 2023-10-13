@@ -3,7 +3,9 @@ name = "protokol"
 version = "1.4.2"
 description = "NATS-oriented RPC and Event protocol"
 authors = [
-    "Sergey Zhegunya <harmonicsseven@gmail.com>",
+    "Sergey Zhegunya <harmonicsseven@gmail.com>"
+]
+maintainers = [
     "Ilia Abashin <abashinos@gmail.com>"
 ]
 homepage = "https://github.com/event-driven-devs/protokol"
