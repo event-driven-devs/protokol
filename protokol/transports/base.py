@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 
 class Transport:
@@ -9,11 +9,11 @@ class Transport:
         raise NotImplementedError
 
     async def subscribe(
-        self, realm: str, callback: Callable, group: str = None, **kwargs
+        self, realm: str, callback: Callable, group: Optional[str] = None, **kwargs
     ):
         raise NotImplementedError
 
-    async def publish(self, realm: str, message: Any, **kwargs):
+    async def publish(self, realm: str, message: Any):
         raise NotImplementedError
 
     async def request(self, realm: str, message: Any, **kwargs):

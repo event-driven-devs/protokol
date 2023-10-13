@@ -15,12 +15,15 @@ logger = get_logger("protokol")
 _sentinel = object()
 
 
-class CallException(Exception):
+class CallError(Exception):
     pass
 
 
+CallException = CallError
+
+
 class Protokol:
-    def __init__(self, *args, **kwargs):
+    def __init__(self):
         self._url = None
         self._transport = None
         self._connection_args = []
@@ -97,7 +100,7 @@ class Protokol:
                     "Use `force` argument to reconnect anyway.",
                     self._url,
                 )
-                return
+                return None
             await self.close()
         return await self._start()
 
@@ -105,7 +108,7 @@ class Protokol:
         if self.is_connected:
             try:
                 await self._transport.close()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 # In case library client misreports the 'connected' status
                 logger.warning(
                     f"Failed to close transport."
@@ -114,13 +117,13 @@ class Protokol:
                 )
 
     @classmethod
-    async def create(
+    async def create(  # noqa: PLR0913
         cls,
         mq_url: str,
         *args,
         transport: Transport = None,
-        connection_args: Iterable = None,
-        connection_kwargs: Mapping = None,
+        connection_args: Optional[Iterable] = None,
+        connection_kwargs: Optional[Mapping] = None,
         default_retry_config: Optional[AsyncRetrying] = None,
         **kwargs,
     ):
@@ -155,13 +158,10 @@ class Protokol:
         return (
             hasattr(function, "__name__")
             and hasattr(self, function.__name__)
-            and (
-                hasattr(function, "__call__")
-                or isinstance(function, collections.Callable)
-            )
+            and (callable(function) or isinstance(function, collections.Callable))
         )
 
-    async def make_listener(
+    async def make_listener(  # noqa: PLR0913
         self,
         realm: str,
         signal_name: Optional[str],
@@ -180,13 +180,13 @@ class Protokol:
                     ),
                     exc_info=True,
                 )
-                return
+                return None
             signal = data.get("signal", "")
             is_not_signal = "signal" not in data
             is_disallowed_loopback = not loopback_allowed and id(self) == data.get("id")
             is_not_my_signal_name = signal_name is not None and signal != signal_name
             if is_disallowed_loopback or is_not_my_signal_name or is_not_signal:
-                return
+                return None
             args = data.get("args", [])
             kwargs = data.get("kwargs", {})
             logger.debug("<< Got signal: {}, {}".format(realm, signal))
@@ -214,7 +214,7 @@ class Protokol:
                     realm, group=group, callback=signal_handler
                 )
 
-    async def make_callable(
+    async def make_callable(  # noqa: PLR0913
         self,
         realm: str,
         function_name: Optional[str],
@@ -355,23 +355,23 @@ class Protokol:
         result = reply.get("result")
         if status == "ok":
             return result
-        elif status == "error":
+        if status == "error":
             raise CallException(result)
         raise CallException("Internal error: bad reply from remote site")
 
     @classmethod
-    def listener(
+    def listener(  # noqa: PLR0913
         cls,
         realm: str,
-        signal_name: str = None,
+        signal_name: Optional[str] = None,
         group: str = "",
         loopback_allowed: bool = False,
         retry_config: Optional[AsyncRetrying] = _sentinel,
     ):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, *args, **kwargs):
+            async def wrapper(self: Protokol):
                 if not isinstance(self, Protokol):
-                    raise ValueError()
+                    raise ValueError
                 await self.make_listener(
                     realm,
                     signal_name,
@@ -386,17 +386,17 @@ class Protokol:
         return inner_function
 
     @classmethod
-    def callable(
+    def callable(  # noqa: A003
         cls,
         realm: str,
-        function_name: str = None,
+        function_name: Optional[str] = None,
         loopback_allowed: bool = False,
         retry_config: Optional[AsyncRetrying] = _sentinel,
     ):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, *args, **kwargs):
+            async def wrapper(self: Protokol):
                 if not isinstance(self, Protokol):
-                    raise ValueError()
+                    raise ValueError
                 await self.make_callable(
                     realm,
                     function_name,
@@ -419,7 +419,7 @@ class Protokol:
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
-                    raise ValueError()
+                    raise ValueError
                 await self.emit(
                     realm,
                     signal_name,
@@ -443,11 +443,11 @@ class Protokol:
         def inner_function(func: Callable):
             async def wrapper(self: Protokol, *args, **kwargs):
                 if not isinstance(self, Protokol):
-                    raise ValueError()
+                    raise ValueError
                 await func(self, *args, **kwargs)
                 return await self.call(
-                    realm=realm,
-                    function_name=function_name,
+                    realm,
+                    function_name,
                     *args,
                     retry_config=retry_config,
                     **kwargs,
@@ -464,9 +464,9 @@ class Protokol:
         retry_config: Optional[AsyncRetrying] = _sentinel,
     ):
         def inner_function(func: Callable):
-            async def wrapper(self: Protokol, *args, **kwargs):
+            async def wrapper(self: Protokol):
                 if not isinstance(self, Protokol):
-                    raise ValueError()
+                    raise ValueError
                 await self.make_monitor(
                     name=name, handler=func, retry_config=retry_config
                 )
