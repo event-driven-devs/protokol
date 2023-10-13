@@ -43,10 +43,10 @@ repos:
       - id: python-no-eval
       - id: python-use-type-annotations
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.0.287
+    rev: v0.0.289
     hooks:
       - id: ruff
-        args: ["--fix", "--line-length=120", "--ignore=E711"]
+        args: ["--fix"]
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1
     hooks:

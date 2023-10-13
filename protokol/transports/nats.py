@@ -23,7 +23,7 @@ class NatsTransport(Transport):
 
     async def publish(self, realm: str, message: Any, **kwargs):
         return await self._client.publish(
-            subject=realm, payload=json.dumps(message).encode()
+            subject=realm, payload=json.dumps(message).encode(), **kwargs
         )
 
     async def request(self, realm: str, message: Any, **kwargs):

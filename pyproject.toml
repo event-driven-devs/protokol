@@ -23,9 +23,35 @@ pytest-cov = "^4.0.0"
 black = "^22.10.0"
 isort = "^5.10.1"
 flake8 = "^5.0.4"
-bandit = "^1.7.4"
 safety = "^2.3.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
+select = [
+    "A",
+    "ARG",
+    "B",
+    "BLE",
+    "C4",
+    "E",
+    "ERA",
+    "F",
+    "FLY",
+    "INP",
+    "N",
+    "PERF",
+    "PIE",
+    "PL",
+    "PTH",
+    "RET",
+    "RSE",
+    "RUF",
+    "SIM",
+    "T20",
+    "W"
+]
+ignore = ["E711"]
