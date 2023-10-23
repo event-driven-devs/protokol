@@ -1,11 +1,21 @@
 import collections
-import json
-from typing import AsyncIterator, Awaitable, Callable, Iterable, List, Mapping, Optional
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+)
 
 from tenacity import AsyncRetrying, AttemptManager, stop_after_attempt
 
 from protokol import settings
 from protokol.logger import get_logger
+from protokol.settings import loads
 from protokol.transports.base import Transport
 from protokol.transports.nats import NatsTransport
 
@@ -24,11 +34,12 @@ CallException = CallError
 
 class Protokol:
     def __init__(self):
-        self._url = None
-        self._transport = None
-        self._connection_args = []
-        self._connection_kwargs = {}
-        self._default_retry_config = None
+        self._url: Optional[str] = None
+        self._transport: Optional[Transport] = None
+        self._connection_args: List[Any] = []
+        self._connection_kwargs: Dict[str, Any] = {}
+        self._default_call_timeout: Optional[float] = None
+        self._default_retry_config: Optional[AsyncRetrying] = None
 
     @property
     def connection_args(self) -> List:
@@ -124,6 +135,7 @@ class Protokol:
         transport: Transport = None,
         connection_args: Optional[Iterable] = None,
         connection_kwargs: Optional[Mapping] = None,
+        default_call_timeout: float = settings.DEFAULT_CALL_TIMEOUT,
         default_retry_config: Optional[AsyncRetrying] = None,
         **kwargs,
     ):
@@ -132,6 +144,7 @@ class Protokol:
         self._transport = transport or NatsTransport()
         self.connection_args = connection_args
         self.connection_kwargs = connection_kwargs
+        self._default_call_timeout = default_call_timeout
         self._default_retry_config = default_retry_config
         await self.connect(force=True)
         return self
@@ -172,7 +185,7 @@ class Protokol:
     ):
         async def signal_handler(msg):
             try:
-                data = json.loads(msg.data.decode())
+                data = loads(msg.data.decode())
             except Exception:
                 logger.error(
                     "Exception in {}.{} in JSON deserialization".format(
@@ -224,7 +237,7 @@ class Protokol:
     ):
         async def call_handler(msg):
             try:
-                data = json.loads(msg.data.decode())
+                data = loads(msg.data.decode())
             except Exception:
                 logger.error(
                     "Exception in {}.{} in JSON deserialization".format(
@@ -283,7 +296,7 @@ class Protokol:
     ):
         async def monitor_handler(msg):
             try:
-                data = json.loads(msg.data.decode())
+                data = loads(msg.data.decode())
             except Exception:
                 logger.error(
                     "Exception in JSON deserialization in {} monitor".format(name),
@@ -331,6 +344,7 @@ class Protokol:
         realm: str,
         function_name: str,
         *args,
+        timeout: Optional[float] = None,
         retry_config: Optional[AsyncRetrying] = _sentinel,
         **kwargs,
     ):
@@ -347,7 +361,11 @@ class Protokol:
         async for attempt in self._retrying(retry_config):
             with attempt:
                 reply = await self._transport.request(
-                    realm, call_data, timeout=settings.CALL_TIMEOUT
+                    realm=realm,
+                    message=call_data,
+                    timeout=timeout
+                    if timeout is not None
+                    else self._default_call_timeout,
                 )
 
         logger.debug("<< Got result: {}".format(reply))
@@ -438,6 +456,7 @@ class Protokol:
         cls,
         realm: str,
         function_name: str,
+        timeout: Optional[float] = None,
         retry_config: Optional[AsyncRetrying] = _sentinel,
     ):
         def inner_function(func: Callable):
@@ -445,10 +464,12 @@ class Protokol:
                 if not isinstance(self, Protokol):
                     raise ValueError
                 await func(self, *args, **kwargs)
+                # TODO: Warp
                 return await self.call(
                     realm,
                     function_name,
                     *args,
+                    timeout=timeout,
                     retry_config=retry_config,
                     **kwargs,
                 )
