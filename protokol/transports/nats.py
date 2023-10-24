@@ -1,8 +1,8 @@
-import json
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from nats.aio.client import Client
 
+from protokol.settings import dumps, loads
 from protokol.transports.base import Transport
 
 
@@ -23,14 +23,16 @@ class NatsTransport(Transport):
 
     async def publish(self, realm: str, message: Any, **kwargs):
         return await self._client.publish(
-            subject=realm, payload=json.dumps(message).encode(), **kwargs
+            subject=realm, payload=dumps(message).encode(), **kwargs
         )
 
-    async def request(self, realm: str, message: Any, **kwargs):
+    async def request(
+        self, realm: str, message: Any, timeout: Optional[float] = None, **kwargs
+    ):
         result = await self._client.request(
-            realm, json.dumps(message).encode(), **kwargs
+            subject=realm, payload=dumps(message).encode(), timeout=timeout, **kwargs
         )
-        return json.loads(result.data)
+        return loads(result.data)
 
     async def monitor(self, callback: Callable, **kwargs):
         return await self._client.subscribe("*", cb=callback, **kwargs)

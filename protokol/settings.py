@@ -1,3 +1,4 @@
+import json
 import os
 
 
@@ -6,4 +7,8 @@ def get_boolean(key: str) -> bool:
 
 
 DEBUG = get_boolean("DEBUG")
-CALL_TIMEOUT = 5
+DEFAULT_CALL_TIMEOUT: float = 5.0
+
+
+loads = json.loads
+dumps = json.dumps

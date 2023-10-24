@@ -13,10 +13,12 @@ class Transport:
     ):
         raise NotImplementedError
 
-    async def publish(self, realm: str, message: Any):
+    async def publish(self, realm: str, message: Any, **kwargs):
         raise NotImplementedError
 
-    async def request(self, realm: str, message: Any, **kwargs):
+    async def request(
+        self, realm: str, message: Any, timeout: Optional[float] = None, **kwargs
+    ):
         raise NotImplementedError
 
     async def monitor(self, callback: Callable, **kwargs):
